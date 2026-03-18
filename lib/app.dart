@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'pages/main_shell.dart';
+import 'theme/app_colors.dart';
 
 class BatteryMonitorApp extends StatelessWidget {
   const BatteryMonitorApp({super.key});
@@ -10,10 +11,18 @@ class BatteryMonitorApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Battery Monitor',
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0B0814),
+        scaffoldBackgroundColor: AppColors.background,
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFFE8E1F8),
-          secondary: Color(0xFFE8E1F8),
+          primary: AppColors.accent,
+          secondary: AppColors.accent,
+          surface: AppColors.panel,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: AppColors.navBackground,
+          selectedItemColor: AppColors.primaryText,
+          unselectedItemColor: AppColors.secondaryText,
+          elevation: 0,
+          type: BottomNavigationBarType.fixed,
         ),
       ),
       home: const MainShell(),

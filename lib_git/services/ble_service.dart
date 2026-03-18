@@ -4,13 +4,10 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../models/battery_data.dart';
 
 class BleService {
-  // AI Thinker UUIDs confirmed from nRF Connect
   static final Guid serviceUuid =
-  Guid('55535343-FE7D-4AE5-8FA9-9FAFD205E455');
-  static final Guid notifyUuid =
-  Guid('49535343-1E4D-4BD9-BA61-23C647249616');
-  static final Guid writeUuid =
-  Guid('49535343-8841-43F4-A8D4-ECBE34729BB3');
+  Guid('0000FFE0-0000-1000-8000-00805F9B34FB');
+  static final Guid characteristicUuid =
+  Guid('0000FFE1-0000-1000-8000-00805F9B34FB');
 
   final StreamController<BatteryData> _dataController =
   StreamController<BatteryData>.broadcast();
@@ -29,17 +26,14 @@ class BleService {
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _notifyChar;
-  BluetoothCharacteristic? _writeChar;
   StreamSubscription<List<int>>? _notifySub;
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BluetoothConnectionState>? _connectionSub;
 
-  final Map<String, ScanResult> _scanMap = {};
-
   String _buffer = '';
   String _lastRawLine = '';
   BatteryData _currentData = BatteryData.empty;
-  String _selectedAddress = 'CF:67:C3:39:3B:99';
+  String _selectedAddress = '68:5E:1C:2B:64:44';
 
   String get selectedAddress => _selectedAddress;
   String get lastRawLine => _lastRawLine;
@@ -48,12 +42,9 @@ class BleService {
   Future<void> initialize() async {
     _statusController.add('Disconnected');
 
-    await _scanSub?.cancel();
+    _scanSub?.cancel();
     _scanSub = FlutterBluePlus.scanResults.listen((results) {
-      for (final r in results) {
-        _scanMap[r.device.remoteId.str] = r;
-      }
-      _scanResultsController.add(_scanMap.values.toList());
+      _scanResultsController.add(results);
     });
   }
 
@@ -66,8 +57,7 @@ class BleService {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     _statusController.add('Scanning...');
-    _scanMap.clear();
-    _scanResultsController.add([]);
+
     await FlutterBluePlus.stopScan();
     await Future.delayed(const Duration(milliseconds: 400));
     await FlutterBluePlus.startScan(timeout: timeout);
@@ -101,52 +91,31 @@ class BleService {
       await _device!.connect(timeout: const Duration(seconds: 10));
       final services = await _device!.discoverServices();
 
-      BluetoothCharacteristic? foundNotify;
-      BluetoothCharacteristic? foundWrite;
+      BluetoothCharacteristic? found;
       for (final service in services) {
         if (service.uuid == serviceUuid) {
           for (final characteristic in service.characteristics) {
-            if (characteristic.uuid == notifyUuid) {
-              foundNotify = characteristic;
-            } else if (characteristic.uuid == writeUuid) {
-              foundWrite = characteristic;
+            if (characteristic.uuid == characteristicUuid) {
+              found = characteristic;
+              break;
             }
           }
         }
       }
 
-      if (foundNotify == null || foundWrite == null) {
-        _statusController.add(
-          'AI Thinker notify/write characteristic not found',
-        );
-        await _device?.disconnect();
+      if (found == null) {
+        _statusController.add('FFE1 not found');
         return;
       }
 
-      _notifyChar = foundNotify;
-      _writeChar = foundWrite;
-
+      _notifyChar = found;
       await _notifyChar!.setNotifyValue(true);
-      await _notifySub?.cancel();
-      _notifySub = _notifyChar!.onValueReceived.listen(_handlePacket);
+      _notifySub = _notifyChar!.lastValueStream.listen(_handlePacket);
 
       _statusController.add('Connected and listening');
     } catch (e) {
       _statusController.add('Connect failed: $e');
-      try {
-        await _device?.disconnect();
-      } catch (_) {}
     }
-  }
-
-  Future<void> sendText(String text, {bool appendCrLf = false}) async {
-    if (_writeChar == null) {
-      _statusController.add('Write failed: not connected');
-      return;
-    }
-
-    final payload = appendCrLf ? '$text\r\n' : text;
-    await _writeChar!.write(utf8.encode(payload), withoutResponse: false);
   }
 
   void _handlePacket(List<int> bytes) {
@@ -155,42 +124,32 @@ class BleService {
     final text = utf8.decode(bytes, allowMalformed: true);
     _buffer += text;
 
-    if (_buffer.length > 300) {
-      _buffer = _buffer.substring(_buffer.length - 300);
-    }
-
-    final normalized = _buffer.replaceAll('\r', ' ').replaceAll('\n', ' ');
-
-    final vMatch = RegExp(
-      r'VIN\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*V?',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-
-    final cMatch = RegExp(
-      r'CUR\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*A?',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-
-    final tMatch = RegExp(
-      r'TEMP\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*C?',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-
-    if (vMatch != null && cMatch != null && tMatch != null) {
-      final line =
-          'VIN=${vMatch.group(1)}V CUR=${cMatch.group(1)}A TEMP=${tMatch.group(1)}C';
-      _consumeLogicalLine(line);
-
-      final lastCrlf = _buffer.lastIndexOf('\r\n');
-      if (lastCrlf >= 0) {
-        _buffer = _buffer.substring(lastCrlf + 2);
+    while (true) {
+      final crlf = _buffer.indexOf('\r\n');
+      if (crlf >= 0) {
+        final line = _buffer.substring(0, crlf).trim();
+        _buffer = _buffer.substring(crlf + 2);
+        if (line.isNotEmpty) {
+          _consumeLogicalLine(line);
+        }
+        continue;
       }
+
+      if (_buffer.contains('VIN=') &&
+          _buffer.contains('CUR=') &&
+          _buffer.contains('TEMP=')) {
+        final line = _buffer.trim();
+        _buffer = '';
+        _consumeLogicalLine(line);
+      }
+      break;
     }
   }
 
   void _consumeLogicalLine(String line) {
     _lastRawLine = line;
     _rawController.add(line);
+
     _statusController.add('Connected and listening');
 
     final parsed = parseMitStyleLine(line);
@@ -204,15 +163,15 @@ class BleService {
     try {
       final normalized = line.replaceAll(',', ' ').replaceAll('  ', ' ');
       final vMatch = RegExp(
-        r'VIN\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*V?',
+        r'VIN\s*=\s*([-+]?[0-9]*\.?[0-9]+)',
         caseSensitive: false,
       ).firstMatch(normalized);
       final cMatch = RegExp(
-        r'CUR\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*A?',
+        r'CUR\s*=\s*([-+]?[0-9]*\.?[0-9]+)',
         caseSensitive: false,
       ).firstMatch(normalized);
       final tMatch = RegExp(
-        r'TEMP\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*C?',
+        r'TEMP\s*=\s*([-+]?[0-9]*\.?[0-9]+)',
         caseSensitive: false,
       ).firstMatch(normalized);
 
@@ -248,10 +207,9 @@ class BleService {
 
       _device = null;
       _notifyChar = null;
-      _writeChar = null;
 
       _statusController.add('Disconnected');
-    } catch (_) {}
+    } catch (e) {}
   }
 
   void dispose() {

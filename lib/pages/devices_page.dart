@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
+import '../widgets/app_button.dart';
+import '../widgets/app_card.dart';
+import '../widgets/status_chip.dart';
 
 class DevicesPage extends StatelessWidget {
   final List<ScanResult> results;
   final String selectedAddress;
   final String status;
   final Future<void> Function() onScan;
-  final Future<void> Function(String address) onConnect;
   final Future<void> Function() onDisconnect;
+  final Future<void> Function(String address) onConnect;
   final ValueChanged<String> onSelectAddress;
-
 
   const DevicesPage({
     super.key,
@@ -18,145 +22,166 @@ class DevicesPage extends StatelessWidget {
     required this.selectedAddress,
     required this.status,
     required this.onScan,
-    required this.onConnect,
     required this.onDisconnect,
+    required this.onConnect,
     required this.onSelectAddress,
   });
 
+  String _displayName(ScanResult r) {
+    final advName = r.advertisementData.advName.trim();
+    final devName = r.device.platformName.trim();
+
+    if (advName.isNotEmpty) return advName;
+    if (devName.isNotEmpty) return devName;
+    return 'Unknown device';
+  }
 
   List<ScanResult> _sortedResults() {
     final list = List<ScanResult>.from(results);
 
-
     int score(ScanResult r) {
-      final name = r.device.platformName.trim().toUpperCase();
+      final name = _displayName(r).toUpperCase();
       final address = r.device.remoteId.str.toUpperCase();
       final selected = address == selectedAddress.toUpperCase();
 
-
       if (selected) return 0;
-      if (name.contains('DSD')) return 1;
-      if (name.isNotEmpty) return 2;
+      if (name.contains('GSL') || name.contains('EBYTE') || name.contains('BT5005')) {
+        return 1;
+      }
+      if (name != 'UNKNOWN DEVICE') return 2;
       return 3;
     }
-
 
     list.sort((a, b) {
       final s1 = score(a);
       final s2 = score(b);
       if (s1 != s2) return s1.compareTo(s2);
-
-
-      if (a.rssi != b.rssi) {
-        return b.rssi.compareTo(a.rssi);
-      }
-
-
+      if (a.rssi != b.rssi) return b.rssi.compareTo(a.rssi);
       return a.device.remoteId.str.compareTo(b.device.remoteId.str);
     });
-
 
     return list;
   }
 
-
   @override
   Widget build(BuildContext context) {
     final sorted = _sortedResults();
-    final bool connected = status.toLowerCase().contains('connected');
-
+    final connected = status.toLowerCase().contains('connected');
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.pageH,
+          AppSpacing.pageTop,
+          AppSpacing.pageH,
+          10,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'BLE Devices',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: const Color(0xFFE8E1F8),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 16),
             Row(
               children: [
-                ElevatedButton(
-                  onPressed: onScan,
-                  child: const Text('Scan'),
+                const Expanded(
+                  child: Text('BLE Devices', style: AppTextStyles.pageTitle),
                 ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: onDisconnect,
-                  child: const Text('Disconnect'),
+                StatusChip(
+                  connected: connected,
+                  label: connected ? 'CONNECTED' : 'READY',
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.titleToSection),
+            AppCard(
+              color: AppColors.panelAlt,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: AppButton(
+                      label: 'Scan',
+                      onPressed: onScan,
+                      icon: Icons.radar,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.buttonGap),
+                  Expanded(
+                    child: AppButton(
+                      label: 'Disconnect',
+                      onPressed: onDisconnect,
+                      icon: Icons.link_off,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.cardGap),
             Expanded(
               child: sorted.isEmpty
                   ? const Center(
-                child: Text(
-                  'No devices yet. Tap Scan.',
-                  style: TextStyle(color: Color(0xFFBFB7CF)),
-                ),
+                child: Text('No devices yet. Tap Scan.', style: AppTextStyles.body),
               )
                   : ListView.separated(
                 itemCount: sorted.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, __) =>
+                const SizedBox(height: AppSpacing.cardGap),
                 itemBuilder: (context, index) {
                   final r = sorted[index];
                   final address = r.device.remoteId.str;
-                  final name = r.device.platformName.trim().isNotEmpty
-                      ? r.device.platformName.trim()
-                      : 'Unknown device';
-
-
+                  final name = _displayName(r);
                   final selected = address == selectedAddress;
                   final thisIsConnected = connected && selected;
 
-
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1D1A24),
-                      borderRadius: BorderRadius.circular(18),
-                      border: selected
-                          ? Border.all(
-                        color: const Color(0xFFE8E1F8),
-                        width: 1.4,
-                      )
-                          : null,
-                    ),
-                    child: ListTile(
-                      title: Text(
-                        name,
-                        style: const TextStyle(
-                          color: Color(0xFFE8E1F8),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
+                  return AppCard(
+                    color: selected ? AppColors.panelAlt : AppColors.panel,
+                    border: selected
+                        ? const Border.fromBorderSide(
+                      BorderSide(color: AppColors.panelBorder, width: 1.2),
+                    )
+                        : null,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(
+                            name == 'Unknown device'
+                                ? Icons.bluetooth_searching
+                                : Icons.bluetooth_audio,
+                            color: AppColors.icon,
+                            size: 28,
+                          ),
                         ),
-                      ),
-                      subtitle: Text(
-                        '$address\nRSSI ${r.rssi} dBm',
-                        style: const TextStyle(
-                          color: Color(0xFFBFB7CF),
-                          fontSize: 14,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(name, style: AppTextStyles.sectionTitle),
+                              const SizedBox(height: 4),
+                              Text(address, style: AppTextStyles.body),
+                              const SizedBox(height: 4),
+                              Text('RSSI ${r.rssi} dBm', style: AppTextStyles.caption),
+                            ],
+                          ),
                         ),
-                      ),
-                      isThreeLine: true,
-                      onTap: () => onSelectAddress(address),
-                      trailing: ElevatedButton(
-                        onPressed: thisIsConnected
-                            ? null
-                            : () async {
-                          onSelectAddress(address);
-                          await onConnect(address);
-                        },
-                        child: Text(
-                          thisIsConnected ? 'Connected' : 'Connect',
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 126,
+                          child: AppButton(
+                            label: thisIsConnected ? 'Connected' : 'Connect',
+                            onPressed: thisIsConnected
+                                ? null
+                                : () async {
+                              onSelectAddress(address);
+                              await onConnect(address);
+                            },
+                            filled: thisIsConnected,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   );
                 },

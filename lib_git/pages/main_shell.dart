@@ -1,22 +1,25 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-
 import '../models/battery_data.dart';
 import '../services/ble_service.dart';
 import 'home_page.dart';
 import 'devices_page.dart';
 import 'settings_page.dart';
 
+
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
+
 
   @override
   State<MainShell> createState() => _MainShellState();
 }
 
+
 class _MainShellState extends State<MainShell> {
   final BleService ble = BleService();
+
 
   int index = 0;
   BatteryData currentData = BatteryData.empty;
@@ -24,49 +27,52 @@ class _MainShellState extends State<MainShell> {
   String rawLine = '';
   List<ScanResult> results = [];
 
-  final List<double> _voltageHistory = [];
-  final List<double> _currentHistory = [];
 
   StreamSubscription<BatteryData>? _dataSub;
   StreamSubscription<String>? _statusSub;
   StreamSubscription<String>? _rawSub;
   StreamSubscription<List<ScanResult>>? _scanSub;
 
-  void _pushHistory(List<double> list, double value, {int max = 24}) {
-    list.add(value);
-    if (list.length > max) list.removeAt(0);
-  }
 
   @override
   void initState() {
     super.initState();
 
+
     ble.initialize();
+
 
     _dataSub = ble.dataStream.listen((data) {
       if (mounted) {
-        setState(() {
-          currentData = data;
-          _pushHistory(_voltageHistory, data.voltage);
-          _pushHistory(_currentHistory, data.current);
-        });
+        setState(() => currentData = data);
       }
     });
 
+
     _statusSub = ble.statusStream.listen((value) {
-      if (mounted) setState(() => status = value);
+      if (mounted) {
+        setState(() => status = value);
+      }
     });
+
 
     _rawSub = ble.rawStream.listen((value) {
-      if (mounted) setState(() => rawLine = value);
+      if (mounted) {
+        setState(() => rawLine = value);
+      }
     });
 
+
     _scanSub = ble.scanResultsStream.listen((value) {
-      if (mounted) setState(() => results = value);
+      if (mounted) {
+        setState(() => results = value);
+      }
     });
+
 
     Future.microtask(() => ble.connectAuto());
   }
+
 
   @override
   void dispose() {
@@ -78,6 +84,7 @@ class _MainShellState extends State<MainShell> {
     super.dispose();
   }
 
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -85,16 +92,14 @@ class _MainShellState extends State<MainShell> {
         data: currentData,
         status: status,
         selectedAddress: ble.selectedAddress,
-        voltageHistory: _voltageHistory.isEmpty ? [0, 0, 0] : _voltageHistory,
-        currentHistory: _currentHistory.isEmpty ? [0, 0, 0] : _currentHistory,
       ),
       DevicesPage(
         results: results,
         selectedAddress: ble.selectedAddress,
         status: status,
         onScan: ble.startScan,
-        onDisconnect: ble.disconnect,
         onConnect: ble.connectByAddress,
+        onDisconnect: ble.disconnect,
         onSelectAddress: (address) {
           ble.setSelectedAddress(address);
           setState(() {});
@@ -102,10 +107,11 @@ class _MainShellState extends State<MainShell> {
       ),
       SettingsPage(
         status: status,
-        selectedAddress: ble.selectedAddress,
         rawLine: rawLine,
+        selectedAddress: ble.selectedAddress,
       ),
     ];
+
 
     return Scaffold(
       body: pages[index],
@@ -114,16 +120,16 @@ class _MainShellState extends State<MainShell> {
         onTap: (i) => setState(() => index = i),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_rounded),
-            label: 'Drive',
+            icon: Icon(Icons.home),
+            label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.bluetooth_searching_rounded),
+            icon: Icon(Icons.bluetooth),
             label: 'Devices',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.tune_rounded),
-            label: 'Diag',
+            icon: Icon(Icons.settings),
+            label: 'Settings',
           ),
         ],
       ),

@@ -1,112 +1,116 @@
 import 'package:flutter/material.dart';
 import '../models/battery_data.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
+import '../widgets/app_card.dart';
 import '../widgets/metric_card.dart';
-
+import '../widgets/sparkline_card.dart';
+import '../widgets/status_chip.dart';
 
 class HomePage extends StatelessWidget {
   final BatteryData data;
   final String status;
   final String selectedAddress;
-
+  final List<double> voltageHistory;
+  final List<double> currentHistory;
 
   const HomePage({
     super.key,
     required this.data,
     required this.status,
     required this.selectedAddress,
+    required this.voltageHistory,
+    required this.currentHistory,
   });
-
 
   @override
   Widget build(BuildContext context) {
-    final bool connected = status.toLowerCase().contains('connected');
-
+    final connected = status.toLowerCase().contains('connected');
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.pageH,
+          AppSpacing.pageTop,
+          AppSpacing.pageH,
+          24,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Battery Monitor',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: const Color(0xFFE8E1F8),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1D1A24),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: connected
-                      ? const Color(0xFFB8A8FF)
-                      : const Color(0xFF3A3446),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Battery Monitor', style: AppTextStyles.pageTitle),
                 ),
+                StatusChip(
+                  connected: connected,
+                  label: connected ? 'LIVE' : 'OFFLINE',
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            AppCard(
+              color: AppColors.panelAlt,
+              border: const Border.fromBorderSide(
+                BorderSide(color: AppColors.panelBorder, width: 1.1),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    connected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-                    color: connected
-                        ? const Color(0xFFE8E1F8)
-                        : const Color(0xFFBFB7CF),
+                  const Text('VEHICLE LINK', style: AppTextStyles.cardLabel),
+                  const SizedBox(height: 10),
+                  Text(
+                    connected ? 'Connected and listening' : 'Disconnected',
+                    style: AppTextStyles.sectionTitle,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          connected ? 'Connected' : 'Disconnected',
-                          style: const TextStyle(
-                            color: Color(0xFFE8E1F8),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          selectedAddress,
-                          style: const TextStyle(
-                            color: Color(0xFFBFB7CF),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  const SizedBox(height: 6),
+                  Text(selectedAddress, style: AppTextStyles.body),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.cardGap),
             MetricCard(
-              title: 'Voltage',
+              icon: Icons.battery_5_bar,
+              label: 'Voltage',
               value: data.voltage.toStringAsFixed(2),
               unit: 'V',
-              icon: Icons.battery_5_bar,
             ),
+            const SizedBox(height: AppSpacing.cardGap),
             MetricCard(
-              title: 'Current',
+              icon: Icons.flash_on,
+              label: 'Current',
               value: data.current.toStringAsFixed(1),
               unit: 'A',
-              icon: Icons.flash_on,
             ),
+            const SizedBox(height: AppSpacing.cardGap),
             MetricCard(
-              title: 'Temperature',
+              icon: Icons.thermostat,
+              label: 'Temperature',
               value: data.temperature.toStringAsFixed(1),
               unit: '°C',
-              icon: Icons.thermostat,
             ),
+            const SizedBox(height: AppSpacing.cardGap),
             MetricCard(
-              title: 'Power',
+              icon: Icons.bolt,
+              label: 'Power',
               value: data.power.toStringAsFixed(1),
               unit: 'W',
-              icon: Icons.bolt,
+            ),
+            const SizedBox(height: AppSpacing.cardGap),
+            SparklineCard(
+              title: 'Voltage Trend',
+              subtitle: 'Recent live samples',
+              values: voltageHistory,
+              rightValue: '${data.voltage.toStringAsFixed(2)} V',
+            ),
+            const SizedBox(height: AppSpacing.cardGap),
+            SparklineCard(
+              title: 'Current Trend',
+              subtitle: 'Recent live samples',
+              values: currentHistory,
+              rightValue: '${data.current.toStringAsFixed(1)} A',
             ),
           ],
         ),

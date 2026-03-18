@@ -1,64 +1,75 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
+import '../widgets/app_card.dart';
 
 class SettingsPage extends StatelessWidget {
   final String status;
-  final String rawLine;
   final String selectedAddress;
+  final String rawLine;
 
   const SettingsPage({
     super.key,
     required this.status,
-    required this.rawLine,
     required this.selectedAddress,
+    required this.rawLine,
   });
+
+  Widget _infoCard(String title, String body, IconData icon) {
+    return AppCard(
+      color: AppColors.panelAlt,
+      border: const Border.fromBorderSide(
+        BorderSide(color: AppColors.panelBorder, width: 1.0),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: AppColors.icon),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title.toUpperCase(), style: AppTextStyles.cardLabel),
+                const SizedBox(height: 8),
+                Text(body.isEmpty ? '-' : body, style: AppTextStyles.body),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    Widget card(String title, String body) {
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 14),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1D1A24),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: const TextStyle(
-                  color: Color(0xFFE8E1F8),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                )),
-            const SizedBox(height: 8),
-            Text(
-              body.isEmpty ? '-' : body,
-              style: const TextStyle(color: Color(0xFFBFB7CF)),
-            ),
-          ],
-        ),
-      );
-    }
-
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.pageH,
+          AppSpacing.pageTop,
+          AppSpacing.pageH,
+          16,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Settings',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: const Color(0xFFE8E1F8),
-                    fontWeight: FontWeight.w500,
-                  ),
-            ),
-            const SizedBox(height: 20),
-            card('Status', status),
-            card('Selected address', selectedAddress),
-            card('Raw data', rawLine),
+            const Text('Diagnostics', style: AppTextStyles.pageTitle),
+            const SizedBox(height: AppSpacing.titleToSection),
+            _infoCard('Status', status, Icons.sensors),
+            const SizedBox(height: AppSpacing.cardGap),
+            _infoCard('Selected address', selectedAddress, Icons.memory),
+            const SizedBox(height: AppSpacing.cardGap),
+            _infoCard('Raw data', rawLine, Icons.code),
           ],
         ),
       ),
