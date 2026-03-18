@@ -8,22 +8,22 @@ import '../models/battery_data.dart';
 class BleService {
   // AI Thinker UUIDs confirmed from nRF Connect
   static final Guid serviceUuid =
-      Guid('55535343-FE7D-4AE5-8FA9-9FAFD205E455');
+  Guid('55535343-FE7D-4AE5-8FA9-9FAFD205E455');
   static final Guid notifyUuid =
-      Guid('49535343-1E4D-4BD9-BA61-23C647249616');
+  Guid('49535343-1E4D-4BD9-BA61-23C647249616');
   static final Guid writeUuid =
-      Guid('49535343-8841-43F4-A8D4-ECBE34729BB3');
+  Guid('49535343-8841-43F4-A8D4-ECBE34729BB3');
 
   static const String _selectedAddressKey = 'selected_ble_address';
 
   final StreamController<BatteryData> _dataController =
-      StreamController<BatteryData>.broadcast();
+  StreamController<BatteryData>.broadcast();
   final StreamController<String> _statusController =
-      StreamController<String>.broadcast();
+  StreamController<String>.broadcast();
   final StreamController<String> _rawController =
-      StreamController<String>.broadcast();
+  StreamController<String>.broadcast();
   final StreamController<List<ScanResult>> _scanResultsController =
-      StreamController<List<ScanResult>>.broadcast();
+  StreamController<List<ScanResult>>.broadcast();
 
   Stream<BatteryData> get dataStream => _dataController.stream;
   Stream<String> get statusStream => _statusController.stream;
@@ -45,6 +45,9 @@ class BleService {
   BatteryData _currentData = BatteryData.empty;
   String _selectedAddress = '';
   bool _isConnected = false;
+  bool _manualDisconnect = false;
+  bool _isReconnecting = false;
+  bool _isConnecting = false;
 
   String get selectedAddress => _selectedAddress;
   String get lastRawLine => _lastRawLine;
@@ -66,6 +69,9 @@ class BleService {
   Future<void> initialize() async {
     _selectedAddress = await _loadSavedAddress();
     _isConnected = false;
+    _manualDisconnect = false;
+    _isReconnecting = false;
+    _isConnecting = false;
     _statusController.add('Disconnected');
 
     await _scanSub?.cancel();
@@ -133,19 +139,44 @@ class BleService {
   }
 
   Future<void> connectByAddress(String address) async {
-    _selectedAddress = address.trim();
+    final trimmed = address.trim();
+    if (trimmed.isEmpty) {
+      _statusController.add('No device selected');
+      return;
+    }
+
+    if (_isConnecting) return;
+
+    _selectedAddress = trimmed;
+    _manualDisconnect = false;
+    _isConnecting = true;
     _statusController.add('Connecting...');
 
     try {
-      await disconnect();
+      await _cleanupConnection();
 
       final target = BluetoothDevice.fromId(_selectedAddress);
       _device = target;
 
+      await _connectionSub?.cancel();
       _connectionSub = _device!.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.connected) {
+          _isConnected = true;
+          _statusController.add('Connected');
+          return;
+        }
+
         if (state == BluetoothConnectionState.disconnected) {
           _isConnected = false;
+          _notifyChar = null;
+          _writeChar = null;
+          _notifySub?.cancel();
+          _notifySub = null;
           _statusController.add('Disconnected');
+
+          if (!_manualDisconnect) {
+            unawaited(_scheduleReconnect());
+          }
         }
       });
 
@@ -191,11 +222,37 @@ class BleService {
       try {
         await _device?.disconnect();
       } catch (_) {}
+
+      if (!_manualDisconnect) {
+        unawaited(_scheduleReconnect());
+      }
+    } finally {
+      _isConnecting = false;
+    }
+  }
+
+  Future<void> _scheduleReconnect() async {
+    if (_isReconnecting) return;
+    if (_selectedAddress.isEmpty) return;
+    if (_manualDisconnect) return;
+
+    _isReconnecting = true;
+    _statusController.add('Reconnecting...');
+
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (_manualDisconnect) return;
+      if (_isConnected) return;
+
+      await connectByAddress(_selectedAddress);
+    } finally {
+      _isReconnecting = false;
     }
   }
 
   Future<void> sendText(String text, {bool appendCrLf = false}) async {
-    if (_writeChar == null) {
+    if (_writeChar == null || !_isConnected) {
       _statusController.add('Write failed: not connected');
       return;
     }
@@ -226,7 +283,10 @@ class BleService {
   void _consumeLogicalLine(String line) {
     _lastRawLine = line;
     _rawController.add(line);
-    _statusController.add('Connected and listening');
+
+    if (_isConnected) {
+      _statusController.add('Connected and listening');
+    }
 
     final parsed = parseMitStyleLine(line);
     if (parsed != null) {
@@ -270,33 +330,36 @@ class BleService {
   }
 
   Future<void> disconnect() async {
-    try {
-      await _notifySub?.cancel();
-      _notifySub = null;
-
-      await _connectionSub?.cancel();
-      _connectionSub = null;
-
-      if (_device != null) {
-        await _device!.disconnect();
-      }
-
-      _isConnected = false;
-      _device = null;
-      _notifyChar = null;
-      _writeChar = null;
-
-      _statusController.add('Disconnected');
-    } catch (_) {}
+    _manualDisconnect = true;
+    _isReconnecting = false;
+    await _cleanupConnection();
+    _statusController.add('Disconnected');
   }
 
-  void dispose() {
-    _notifySub?.cancel();
-    _scanSub?.cancel();
-    _connectionSub?.cancel();
-    _dataController.close();
-    _statusController.close();
-    _rawController.close();
-    _scanResultsController.close();
+  Future<void> _cleanupConnection() async {
+    _isConnected = false;
+
+    await _notifySub?.cancel();
+    _notifySub = null;
+
+    await _connectionSub?.cancel();
+    _connectionSub = null;
+
+    try {
+      await _device?.disconnect();
+    } catch (_) {}
+
+    _device = null;
+    _notifyChar = null;
+    _writeChar = null;
+  }
+
+  Future<void> dispose() async {
+    await disconnect();
+    await _scanSub?.cancel();
+    await _dataController.close();
+    await _statusController.close();
+    await _rawController.close();
+    await _scanResultsController.close();
   }
 }
