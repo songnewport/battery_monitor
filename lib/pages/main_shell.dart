@@ -41,8 +41,6 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
 
-    ble.initialize();
-
     _dataSub = ble.dataStream.listen((data) {
       if (mounted) {
         setState(() {
@@ -65,7 +63,10 @@ class _MainShellState extends State<MainShell> {
       if (mounted) setState(() => results = value);
     });
 
-    Future.microtask(() => ble.connectAuto());
+    Future.microtask(() async {
+      await ble.initialize();
+      await ble.connectAuto();
+    });
   }
 
   @override
@@ -85,6 +86,7 @@ class _MainShellState extends State<MainShell> {
         data: currentData,
         status: status,
         selectedAddress: ble.selectedAddress,
+        connected: ble.isConnected,
         voltageHistory: _voltageHistory.isEmpty ? [0, 0, 0] : _voltageHistory,
         currentHistory: _currentHistory.isEmpty ? [0, 0, 0] : _currentHistory,
       ),
@@ -92,6 +94,7 @@ class _MainShellState extends State<MainShell> {
         results: results,
         selectedAddress: ble.selectedAddress,
         status: status,
+        connected: ble.isConnected,
         onScan: ble.startScan,
         onDisconnect: ble.disconnect,
         onConnect: ble.connectByAddress,

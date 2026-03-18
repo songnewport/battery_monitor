@@ -2,25 +2,28 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/battery_data.dart';
 
 class BleService {
   // AI Thinker UUIDs confirmed from nRF Connect
   static final Guid serviceUuid =
-  Guid('55535343-FE7D-4AE5-8FA9-9FAFD205E455');
+      Guid('55535343-FE7D-4AE5-8FA9-9FAFD205E455');
   static final Guid notifyUuid =
-  Guid('49535343-1E4D-4BD9-BA61-23C647249616');
+      Guid('49535343-1E4D-4BD9-BA61-23C647249616');
   static final Guid writeUuid =
-  Guid('49535343-8841-43F4-A8D4-ECBE34729BB3');
+      Guid('49535343-8841-43F4-A8D4-ECBE34729BB3');
+
+  static const String _selectedAddressKey = 'selected_ble_address';
 
   final StreamController<BatteryData> _dataController =
-  StreamController<BatteryData>.broadcast();
+      StreamController<BatteryData>.broadcast();
   final StreamController<String> _statusController =
-  StreamController<String>.broadcast();
+      StreamController<String>.broadcast();
   final StreamController<String> _rawController =
-  StreamController<String>.broadcast();
+      StreamController<String>.broadcast();
   final StreamController<List<ScanResult>> _scanResultsController =
-  StreamController<List<ScanResult>>.broadcast();
+      StreamController<List<ScanResult>>.broadcast();
 
   Stream<BatteryData> get dataStream => _dataController.stream;
   Stream<String> get statusStream => _statusController.stream;
@@ -40,12 +43,13 @@ class BleService {
   String _buffer = '';
   String _lastRawLine = '';
   BatteryData _currentData = BatteryData.empty;
-  String _selectedAddress = 'CF:67:C3:39:3B:99';
+  String _selectedAddress = '';
+  bool _isConnected = false;
 
   String get selectedAddress => _selectedAddress;
   String get lastRawLine => _lastRawLine;
   BluetoothDevice? get device => _device;
-
+  bool get isConnected => _isConnected;
 
   Future<bool> _ensureScanPermissions() async {
     final location = await Permission.location.request();
@@ -60,6 +64,8 @@ class BleService {
   }
 
   Future<void> initialize() async {
+    _selectedAddress = await _loadSavedAddress();
+    _isConnected = false;
     _statusController.add('Disconnected');
 
     await _scanSub?.cancel();
@@ -78,8 +84,24 @@ class BleService {
     });
   }
 
+  Future<String> _loadSavedAddress() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getString(_selectedAddressKey) ?? '').trim();
+  }
+
+  Future<void> _saveSelectedAddress(String address) async {
+    final trimmed = address.trim();
+    final prefs = await SharedPreferences.getInstance();
+    if (trimmed.isEmpty) {
+      await prefs.remove(_selectedAddressKey);
+      return;
+    }
+    await prefs.setString(_selectedAddressKey, trimmed);
+  }
+
   void setSelectedAddress(String address) {
     _selectedAddress = address.trim();
+    unawaited(_saveSelectedAddress(_selectedAddress));
     _statusController.add('Selected: $_selectedAddress');
   }
 
@@ -103,6 +125,10 @@ class BleService {
   }
 
   Future<void> connectAuto() async {
+    if (_selectedAddress.isEmpty) {
+      _statusController.add('Ready');
+      return;
+    }
     await connectByAddress(_selectedAddress);
   }
 
@@ -118,6 +144,7 @@ class BleService {
 
       _connectionSub = _device!.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
+          _isConnected = false;
           _statusController.add('Disconnected');
         }
       });
@@ -140,6 +167,7 @@ class BleService {
       }
 
       if (foundNotify == null || foundWrite == null) {
+        _isConnected = false;
         _statusController.add(
           'AI Thinker notify/write characteristic not found',
         );
@@ -154,8 +182,11 @@ class BleService {
       await _notifySub?.cancel();
       _notifySub = _notifyChar!.lastValueStream.listen(_handlePacket);
 
+      await _saveSelectedAddress(_selectedAddress);
+      _isConnected = true;
       _statusController.add('Connected and listening');
     } catch (e) {
+      _isConnected = false;
       _statusController.add('Connect failed: $e');
       try {
         await _device?.disconnect();
@@ -250,6 +281,7 @@ class BleService {
         await _device!.disconnect();
       }
 
+      _isConnected = false;
       _device = null;
       _notifyChar = null;
       _writeChar = null;

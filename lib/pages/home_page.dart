@@ -14,6 +14,7 @@ class HomePage extends StatelessWidget {
   final String selectedAddress;
   final List<double> voltageHistory;
   final List<double> currentHistory;
+  final bool connected;
 
   const HomePage({
     super.key,
@@ -22,12 +23,11 @@ class HomePage extends StatelessWidget {
     required this.selectedAddress,
     required this.voltageHistory,
     required this.currentHistory,
+    required this.connected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final connected = status.toLowerCase().contains('connected');
-
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(

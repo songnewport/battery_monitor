@@ -15,6 +15,7 @@ class DevicesPage extends StatelessWidget {
   final Future<void> Function() onDisconnect;
   final Future<void> Function(String address) onConnect;
   final ValueChanged<String> onSelectAddress;
+  final bool connected;
 
   const DevicesPage({
     super.key,
@@ -25,6 +26,7 @@ class DevicesPage extends StatelessWidget {
     required this.onDisconnect,
     required this.onConnect,
     required this.onSelectAddress,
+    required this.connected,
   });
 
   String _displayName(ScanResult r) {
@@ -66,7 +68,6 @@ class DevicesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sorted = _sortedResults();
-    final connected = status.toLowerCase().contains('connected');
 
     return SafeArea(
       child: Padding(
