@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/battery_data.dart';
 
 class BleService {
@@ -45,12 +46,32 @@ class BleService {
   String get lastRawLine => _lastRawLine;
   BluetoothDevice? get device => _device;
 
+
+  Future<bool> _ensureScanPermissions() async {
+    final location = await Permission.location.request();
+    final scan = await Permission.bluetoothScan.request();
+    final connect = await Permission.bluetoothConnect.request();
+
+    final ok = location.isGranted && scan.isGranted && connect.isGranted;
+    if (!ok) {
+      _statusController.add('Permission denied');
+    }
+    return ok;
+  }
+
   Future<void> initialize() async {
     _statusController.add('Disconnected');
 
     await _scanSub?.cancel();
     _scanSub = FlutterBluePlus.scanResults.listen((results) {
       for (final r in results) {
+        final advName = r.advertisementData.advName.trim();
+        final platformName = r.device.platformName.trim();
+        final displayName = advName.isNotEmpty ? advName : platformName;
+
+        // Filter out nameless BLE devices completely.
+        if (displayName.isEmpty) continue;
+
         _scanMap[r.device.remoteId.str] = r;
       }
       _scanResultsController.add(_scanMap.values.toList());
@@ -65,6 +86,9 @@ class BleService {
   Future<void> startScan({
     Duration timeout = const Duration(seconds: 8),
   }) async {
+    final allowed = await _ensureScanPermissions();
+    if (!allowed) return;
+
     _statusController.add('Scanning...');
     _scanMap.clear();
     _scanResultsController.add([]);
@@ -128,7 +152,7 @@ class BleService {
 
       await _notifyChar!.setNotifyValue(true);
       await _notifySub?.cancel();
-      _notifySub = _notifyChar!.onValueReceived.listen(_handlePacket);
+      _notifySub = _notifyChar!.lastValueStream.listen(_handlePacket);
 
       _statusController.add('Connected and listening');
     } catch (e) {
@@ -155,35 +179,15 @@ class BleService {
     final text = utf8.decode(bytes, allowMalformed: true);
     _buffer += text;
 
-    if (_buffer.length > 300) {
-      _buffer = _buffer.substring(_buffer.length - 300);
-    }
+    while (true) {
+      final crlf = _buffer.indexOf('\r\n');
+      if (crlf < 0) break;
 
-    final normalized = _buffer.replaceAll('\r', ' ').replaceAll('\n', ' ');
+      final line = _buffer.substring(0, crlf).trim();
+      _buffer = _buffer.substring(crlf + 2);
 
-    final vMatch = RegExp(
-      r'VIN\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*V?',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-
-    final cMatch = RegExp(
-      r'CUR\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*A?',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-
-    final tMatch = RegExp(
-      r'TEMP\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*C?',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-
-    if (vMatch != null && cMatch != null && tMatch != null) {
-      final line =
-          'VIN=${vMatch.group(1)}V CUR=${cMatch.group(1)}A TEMP=${tMatch.group(1)}C';
-      _consumeLogicalLine(line);
-
-      final lastCrlf = _buffer.lastIndexOf('\r\n');
-      if (lastCrlf >= 0) {
-        _buffer = _buffer.substring(lastCrlf + 2);
+      if (line.isNotEmpty) {
+        _consumeLogicalLine(line);
       }
     }
   }
@@ -204,15 +208,15 @@ class BleService {
     try {
       final normalized = line.replaceAll(',', ' ').replaceAll('  ', ' ');
       final vMatch = RegExp(
-        r'VIN\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*V?',
+        r'VIN\s*=\s*([-+]?[0-9]*\.?[0-9]+)',
         caseSensitive: false,
       ).firstMatch(normalized);
       final cMatch = RegExp(
-        r'CUR\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*A?',
+        r'CUR\s*=\s*([-+]?[0-9]*\.?[0-9]+)',
         caseSensitive: false,
       ).firstMatch(normalized);
       final tMatch = RegExp(
-        r'TEMP\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*C?',
+        r'TEMP\s*=\s*([-+]?[0-9]*\.?[0-9]+)',
         caseSensitive: false,
       ).firstMatch(normalized);
 
